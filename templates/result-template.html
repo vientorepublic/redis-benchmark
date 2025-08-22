@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Benchmark Results</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        line-height: 1.6;
+        margin: 0;
+        padding: 0;
+        background-color: #f4f4f9;
+        color: #333;
+      }
+      .container {
+        max-width: 800px;
+        margin: 20px auto;
+        padding: 20px;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      h1,
+      h2 {
+        color: #444;
+      }
+      .info,
+      .stages,
+      .total {
+        margin-bottom: 20px;
+      }
+      .info div,
+      .stages div,
+      .total div {
+        margin-bottom: 10px;
+      }
+      .label {
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Benchmark Results</h1>
+
+      <div class="info">
+        <h2>Hardware Information</h2>
+        <div><span class="label">Platform:</span> <span id="platform"></span></div>
+        <div><span class="label">Architecture:</span> <span id="arch"></span></div>
+        <div><span class="label">CPUs:</span> <span id="cpus"></span></div>
+        <div><span class="label">Total Memory:</span> <span id="total-memory"></span></div>
+        <div><span class="label">Free Memory:</span> <span id="free-memory"></span></div>
+      </div>
+
+      <div class="stages">
+        <h2>Benchmark Stages</h2>
+        <div><span class="label">Insert:</span> <span id="insert"></span></div>
+        <div><span class="label">Fetch:</span> <span id="fetch"></span></div>
+        <div><span class="label">Delete:</span> <span id="delete"></span></div>
+      </div>
+
+      <div class="total">
+        <h2>Total Time</h2>
+        <div><span class="label">Total:</span> <span id="total-time"></span></div>
+      </div>
+    </div>
+    <script>
+      const data = JSON.parse("{{RESULT_DATA}}");
+
+      // Populate hardware info
+      document.getElementById("platform").textContent = data.hardwareInfo.platform;
+      document.getElementById("arch").textContent = data.hardwareInfo.arch;
+      document.getElementById("cpus").textContent = data.hardwareInfo.cpus.join(", ");
+      document.getElementById("total-memory").textContent = data.hardwareInfo.totalMemory;
+      document.getElementById("free-memory").textContent = data.hardwareInfo.freeMemory;
+
+      // Populate benchmark stages
+      document.getElementById(
+        "insert"
+      ).textContent = `Total Time: ${data.stages.insert.totalTime}, Avg Per Batch: ${data.stages.insert.avgPerBatch}, Throughput: ${data.stages.insert.throughput}`;
+      document.getElementById(
+        "fetch"
+      ).textContent = `Total Time: ${data.stages.fetch.totalTime}, Avg Per Batch: ${data.stages.fetch.avgPerBatch}, Throughput: ${data.stages.fetch.throughput}`;
+      document.getElementById(
+        "delete"
+      ).textContent = `Total Time: ${data.stages.delete.totalTime}, Avg Per Batch: ${data.stages.delete.avgPerBatch}, Throughput: ${data.stages.delete.throughput}`;
+
+      // Populate total time
+      document.getElementById("total-time").textContent = data.totalTime;
+    </script>
+  </body>
+</html>

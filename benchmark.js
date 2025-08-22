@@ -1,4 +1,5 @@
 const { createClient } = require("redis");
+const { getHardwareInfo, saveBenchmarkResults, generateHtmlResults } = require("./utils");
 
 const BATCH_SIZE = 1000;
 const NUM_BATCHES = 1000;
@@ -6,6 +7,9 @@ const NUM_BATCHES = 1000;
 async function runBenchmark() {
   const client = createClient();
   await client.connect();
+
+  const hardwareInfo = getHardwareInfo();
+  const results = { hardwareInfo, stages: {} };
 
   const green = "\x1b[32m";
   const yellow = "\x1b[33m";
@@ -52,9 +56,9 @@ async function runBenchmark() {
   let fetchBatchTimes = [];
   do {
     const fetchStart = Date.now();
-    const [nextCursor, keys] = await client.scan(cursor, { MATCH: "bench:*", COUNT: 1000 });
-    cursor = Number(nextCursor);
-    allKeys = allKeys.concat(keys);
+    const scanResult = await client.scan(cursor, { MATCH: "bench:*", COUNT: 1000 });
+    cursor = scanResult.cursor;
+    allKeys = allKeys.concat(scanResult.keys);
     const fetchEnd = Date.now();
     fetchBatchTimes.push(fetchEnd - fetchStart);
   } while (cursor !== 0);
@@ -91,10 +95,27 @@ async function runBenchmark() {
   let deleteBatchTimes = [];
   do {
     const delStart = Date.now();
-    const [nextCursor, keys] = await client.scan(delCursor, { MATCH: "bench:*", COUNT: 1000 });
-    delCursor = Number(nextCursor);
+    let scanResult;
+    try {
+      scanResult = await client.scan(delCursor, { MATCH: "bench:*", COUNT: 1000 });
+    } catch (error) {
+      console.error("Error during client.scan:", error);
+      throw error; // Re-throw after logging
+    }
+
+    if (!scanResult || typeof scanResult.cursor === "undefined" || !Array.isArray(scanResult.keys)) {
+      throw new Error(`Unexpected scan result: ${JSON.stringify(scanResult)}`);
+    }
+
+    delCursor = scanResult.cursor;
+    const keys = scanResult.keys;
     if (keys.length > 0) {
-      await client.del(keys);
+      try {
+        await client.del(keys);
+      } catch (error) {
+        console.error("Error during client.del:", error);
+        throw error; // Re-throw after logging
+      }
       delCount += keys.length;
     }
     const delEnd = Date.now();
@@ -110,6 +131,30 @@ async function runBenchmark() {
       2
     )} ops/sec), avg per batch: ${avgDeleteBatch}s (${avgDeleteBatchMs}ms)${reset}`
   );
+  results.stages.insert = {
+    totalTime: `${insertTime}s (${insertMs}ms)`,
+    avgPerBatch: `${avgInsertBatch}s (${avgInsertBatchMs}ms)`,
+    throughput: `${insertTPS} ops/sec`,
+  };
+
+  results.stages.fetch = {
+    totalTime: `${fetchTime}s (${fetchMs}ms)`,
+    avgPerBatch: `${avgFetchBatch}s (${avgFetchBatchMs}ms)`,
+    throughput: `${(allKeys.length / (fetchMs / 1000)).toFixed(2)} ops/sec`,
+  };
+
+  results.stages.delete = {
+    totalTime: `${deleteTime}s (${deleteMs}ms)`,
+    avgPerBatch: `${avgDeleteBatch}s (${avgDeleteBatchMs}ms)`,
+    throughput: `${(delCount / (deleteMs / 1000)).toFixed(2)} ops/sec`,
+  };
+
+  results.totalTime = `${totalTime}s (${totalMs}ms)`;
+
+  saveBenchmarkResults("redis-benchmark-results.json", results);
+  generateHtmlResults("./templates/result-template.html", "redis-benchmark-results.html", results);
+
+  console.log(`${green}[${ts()}] Redis Benchmark complete. Results saved as JSON and HTML.${reset}`);
   await client.quit();
 }
 

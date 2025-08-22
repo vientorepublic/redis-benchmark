@@ -1,5 +1,4 @@
-// js-batch-benchmark.js
-// Node.js 런타임의 순수 자바스크립트 성능 벤치마크 (배열에 1000x1000 K-V 저장)
+const { getHardwareInfo, saveBenchmarkResults, generateHtmlResults } = require("./utils");
 
 const BATCH_SIZE = 1000;
 const NUM_BATCHES = 1000;
@@ -102,7 +101,34 @@ async function runJsBenchmark() {
   const end = Date.now();
   const totalMs = end - t0;
   const totalTime = (totalMs / 1000).toFixed(4);
-  console.log(`${green}[${ts()}] JS Benchmark complete. Total time: ${totalTime} seconds (${totalMs}ms).${reset}`);
+
+  const hardwareInfo = getHardwareInfo();
+  const results = { hardwareInfo, stages: {} };
+
+  results.stages.insert = {
+    totalTime: `${insertTime}s (${insertMs}ms)`,
+    avgPerBatch: `${avgInsertBatch}s (${avgInsertBatchMs}ms)`,
+    throughput: `${insertTPS} ops/sec`,
+  };
+
+  results.stages.fetch = {
+    totalTime: `${fetchTime}s (${fetchMs}ms)`,
+    avgPerBatch: `${avgFetchBatch}s (${avgFetchBatchMs}ms)`,
+    throughput: `${(keys.length / (fetchMs / 1000)).toFixed(2)} ops/sec`,
+  };
+
+  results.stages.delete = {
+    totalTime: `${deleteTime}s (${deleteMs}ms)`,
+    avgPerBatch: `${avgDeleteBatch}s (${avgDeleteBatchMs}ms)`,
+    throughput: `${(keys.length / (deleteMs / 1000)).toFixed(2)} ops/sec`,
+  };
+
+  results.totalTime = `${totalTime}s (${totalMs}ms)`;
+
+  saveBenchmarkResults("js-benchmark-results.json", results);
+  generateHtmlResults("./templates/result-template.html", "js-benchmark-results.html", results);
+
+  console.log(`${green}[${ts()}] JS Benchmark complete. Results saved as JSON and HTML.${reset}`);
 }
 
 runJsBenchmark().catch((err) => {
