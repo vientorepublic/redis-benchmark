@@ -1,0 +1,14 @@
+{
+  "name": "redis-benchmark",
+  "version": "1.0.0",
+  "description": "Redis performance benchmark using node-redis (1000x1000 K-V batch)",
+  "main": "benchmark.js",
+  "scripts": {
+    "start": "node benchmark.js"
+  },
+  "dependencies": {
+    "redis": "^4.6.7"
+  },
+  "author": "Doyeon Kim",
+  "license": "MIT"
+}
