@@ -1,7 +1,41 @@
 const { getHardwareInfo, saveBenchmarkResults, generateHtmlResults } = require("./utils");
 
-const BATCH_SIZE = 1000;
-const NUM_BATCHES = 1000;
+// CLI argument parsing and --help support (English)
+function printHelp() {
+  console.log(
+    `\nJS Batch Benchmark CLI\n\nUsage: node js-batch-benchmark.js [options]\n\nOptions:\n  --batchSize=N     Number of key-value pairs per batch (default: 1000)\n  --numBatches=N    Number of batches (default: 1000)\n  --help            Show this help message\n\nExample:\n  node js-batch-benchmark.js --batchSize=500 --numBatches=2000\n`
+  );
+}
+
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const opts = {};
+  for (const arg of args) {
+    if (arg === "--help" || arg === "-h") {
+      printHelp();
+      process.exit(0);
+    }
+    const match = arg.match(/^--(\w+)=(\d+)$/);
+    if (match) {
+      opts[match[1]] = parseInt(match[2], 10);
+    } else if (arg.startsWith("--")) {
+      console.error(`Unknown option: ${arg}`);
+      printHelp();
+      process.exit(1);
+    }
+  }
+  return opts;
+}
+
+const cliOpts = parseArgs();
+function getArgOrEnv(name, defaultValue) {
+  if (cliOpts[name] !== undefined) return cliOpts[name];
+  if (process.env[name]) return parseInt(process.env[name], 10);
+  return defaultValue;
+}
+
+const BATCH_SIZE = getArgOrEnv("batchSize", 1000);
+const NUM_BATCHES = getArgOrEnv("numBatches", 1000);
 
 async function runJsBenchmark() {
   const green = "\x1b[32m";
@@ -17,18 +51,24 @@ async function runJsBenchmark() {
 
   // Insert (per-batch timing)
   let insertBatchTimes = [];
-  for (let batch = 0; batch < NUM_BATCHES; batch++) {
-    const batchStart = Date.now();
-    for (let i = 0; i < BATCH_SIZE; i++) {
-      const key = `bench:${batch}:${i}`;
-      const value = `value-${batch}-${i}`;
-      store[key] = value;
+  try {
+    for (let batch = 0; batch < NUM_BATCHES; batch++) {
+      const batchStart = Date.now();
+      for (let i = 0; i < BATCH_SIZE; i++) {
+        const key = `bench:${batch}:${i}`;
+        const value = `value-${batch}-${i}`;
+        store[key] = value;
+      }
+      const batchEnd = Date.now();
+      insertBatchTimes.push(batchEnd - batchStart);
+      if ((batch + 1) % 100 === 0) {
+        console.log(`${yellow}[${ts()}] Completed batch ${batch + 1}/${NUM_BATCHES}${reset}`);
+      }
     }
-    const batchEnd = Date.now();
-    insertBatchTimes.push(batchEnd - batchStart);
-    if ((batch + 1) % 100 === 0) {
-      console.log(`${yellow}[${ts()}] Completed batch ${batch + 1}/${NUM_BATCHES}${reset}`);
-    }
+  } catch (err) {
+    console.error(`${yellow}[${ts()}] Insert stage error:`, err, reset);
+    savePartialResults("js-benchmark-partial-insert.json", store, "insert", insertBatchTimes);
+    throw err;
   }
   const t1 = Date.now();
   const insertMs = t1 - t0;
@@ -45,12 +85,18 @@ async function runJsBenchmark() {
   const keys = Object.keys(store);
   let fetchBatchTimes = [];
   let values = [];
-  for (let i = 0; i < keys.length; i += BATCH_SIZE) {
-    const fetchStart = Date.now();
-    const batchKeys = keys.slice(i, i + BATCH_SIZE);
-    values.push(...batchKeys.map((k) => store[k]));
-    const fetchEnd = Date.now();
-    fetchBatchTimes.push(fetchEnd - fetchStart);
+  try {
+    for (let i = 0; i < keys.length; i += BATCH_SIZE) {
+      const fetchStart = Date.now();
+      const batchKeys = keys.slice(i, i + BATCH_SIZE);
+      values.push(...batchKeys.map((k) => store[k]));
+      const fetchEnd = Date.now();
+      fetchBatchTimes.push(fetchEnd - fetchStart);
+    }
+  } catch (err) {
+    console.error(`${yellow}[${ts()}] Fetch stage error:`, err, reset);
+    savePartialResults("js-benchmark-partial-fetch.json", store, "fetch", fetchBatchTimes);
+    throw err;
   }
   const fetchMs = Date.now() - t2;
   const fetchTime = (fetchMs / 1000).toFixed(4);
@@ -74,14 +120,20 @@ async function runJsBenchmark() {
   // Delete (per-batch timing)
   const t3 = Date.now();
   let deleteBatchTimes = [];
-  for (let i = 0; i < keys.length; i += BATCH_SIZE) {
-    const delStart = Date.now();
-    const batchKeys = keys.slice(i, i + BATCH_SIZE);
-    for (const k of batchKeys) {
-      delete store[k];
+  try {
+    for (let i = 0; i < keys.length; i += BATCH_SIZE) {
+      const delStart = Date.now();
+      const batchKeys = keys.slice(i, i + BATCH_SIZE);
+      for (const k of batchKeys) {
+        delete store[k];
+      }
+      const delEnd = Date.now();
+      deleteBatchTimes.push(delEnd - delStart);
     }
-    const delEnd = Date.now();
-    deleteBatchTimes.push(delEnd - delStart);
+  } catch (err) {
+    console.error(`${yellow}[${ts()}] Delete stage error:`, err, reset);
+    savePartialResults("js-benchmark-partial-delete.json", store, "delete", deleteBatchTimes);
+    throw err;
   }
   const deleteMs = Date.now() - t3;
   const deleteTime = (deleteMs / 1000).toFixed(4);
@@ -129,6 +181,13 @@ async function runJsBenchmark() {
   generateHtmlResults("./templates/result-template.html", "js-benchmark-results.html", results);
 
   console.log(`${green}[${ts()}] JS Benchmark complete. Results saved as JSON and HTML.${reset}`);
+}
+
+// 중간 결과 저장 함수
+function savePartialResults(fileName, store, stage, batchTimes) {
+  const hardwareInfo = getHardwareInfo();
+  const results = { hardwareInfo, stage, batchTimes, partialKeys: Object.keys(store).length };
+  saveBenchmarkResults(fileName, results);
 }
 
 runJsBenchmark().catch((err) => {
